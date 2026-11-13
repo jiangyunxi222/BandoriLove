@@ -5,13 +5,17 @@ using System.Text.Json;
 
 namespace BandoriLove;
 
+internal sealed class EngineStartupException(string message, Exception cause) : Exception(message, cause);
+
 internal sealed class LocalEngine : IDisposable
 {
     private Process? worker;
+    private string? workerDevice;
+    private string? workerConfig;
     private readonly Queue<string> messages = new();
     private bool disposed;
 
-    private Process Start()
+    private Process Start(string device)
     {
         var bundle = Path.Combine(AppContext.BaseDirectory, "gsv");
         var runtime = Path.Combine(bundle, "runtime");
@@ -22,6 +26,8 @@ internal sealed class LocalEngine : IDisposable
             throw new InvalidOperationException("本机模型包未准备完成。需要第 2 轮 GPT 与 SoVITS 权重。");
         if (!File.Exists(python))
             throw new InvalidOperationException("本机 GPT-SoVITS Python 运行时未安装完成。");
+        workerConfig = Path.Combine(Path.GetTempPath(), $"BandoriLove-gsv-{Guid.NewGuid():N}.yaml");
+        File.Copy(config, workerConfig);
         var start = new ProcessStartInfo(python)
         {
             UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = engine,
@@ -29,10 +35,13 @@ internal sealed class LocalEngine : IDisposable
             StandardInputEncoding = new UTF8Encoding(false), StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8
         };
-        foreach (var argument in new[] { "-u", Path.Combine(bundle, "local-worker.py"), config })
+        foreach (var argument in new[] { "-u", Path.Combine(bundle, "local-worker.py"), workerConfig, device == "cpu" ? "cpu" : "cuda:0" })
             start.ArgumentList.Add(argument);
         start.Environment["PYTHONUTF8"] = "1";
-        start.Environment["PYTHONPATH"] = Path.Combine(runtime, "Lib", "site-packages");
+        var sitePackages = Path.Combine(runtime, "Lib", "site-packages");
+        start.Environment["PYTHONPATH"] = device == "cpu" ? sitePackages : HardwareMonitor.CudaPath + Path.PathSeparator + sitePackages;
+        start.Environment["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID";
+        start.Environment["CUDA_VISIBLE_DEVICES"] = device == "cpu" ? "-1" : device;
         start.Environment["PATH"] = runtime + Path.PathSeparator + start.Environment["PATH"];
         start.Environment["HF_HUB_OFFLINE"] = "1";
         start.Environment["TRANSFORMERS_OFFLINE"] = "1";
@@ -62,7 +71,7 @@ internal sealed class LocalEngine : IDisposable
         }
     }
 
-    internal async Task<byte[]> SynthesizeAsync(VoiceCard card, string text, string language, CancellationToken cancellation)
+    internal async Task<byte[]> SynthesizeAsync(VoiceCard card, string text, string language, string device, CancellationToken cancellation)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         var bundle = Path.Combine(AppContext.BaseDirectory, "gsv");
@@ -77,11 +86,20 @@ internal sealed class LocalEngine : IDisposable
         var output = Path.Combine(Path.GetTempPath(), $"BandoriLove-{Guid.NewGuid():N}.wav");
         try
         {
-            if (worker is null || worker.HasExited)
+            if (worker is null || worker.HasExited || workerDevice != device)
             {
                 Stop();
-                worker = Start();
-                await ReadResponseAsync(worker, token);
+                try
+                {
+                    worker = Start(device);
+                    await ReadResponseAsync(worker, token);
+                    workerDevice = device;
+                }
+                catch (Exception error) when (error is not OperationCanceledException)
+                {
+                    Stop();
+                    throw new EngineStartupException(error.Message, error);
+                }
             }
             var request = JsonSerializer.Serialize(new
             {
@@ -130,17 +148,25 @@ internal sealed class LocalEngine : IDisposable
     {
         var process = worker;
         worker = null;
-        if (process is null) return;
+        workerDevice = null;
         try
         {
-            if (!process.HasExited)
+            if (process is not null && !process.HasExited)
             {
                 process.Kill(entireProcessTree: true);
                 process.WaitForExit(2000);
             }
         }
         catch (InvalidOperationException) { }
-        finally { process.Dispose(); }
+        finally
+        {
+            process?.Dispose();
+            if (workerConfig is not null)
+            {
+                try { File.Delete(workerConfig); } catch (IOException) { }
+                workerConfig = null;
+            }
+        }
     }
 
     public void Dispose()

@@ -7,5 +7,6 @@
     <Nullable>enable</Nullable>
     <AssemblyName>BandoriLove</AssemblyName>
     <Version>0.1.0</Version>
+    <DefaultItemExcludes>$(DefaultItemExcludes);dist/**;weights/**</DefaultItemExcludes>
   </PropertyGroup>
 </Project>

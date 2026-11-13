@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Linq;
 using System.Media;
 using System.Windows;
 using System.Windows.Controls;
@@ -11,6 +12,13 @@ public partial class MainWindow : Window
 {
     private readonly ObservableCollection<VoiceCard> cards = [];
     private readonly LocalEngine localEngine = new();
+    private readonly HardwareMonitor hardware = new();
+    private readonly CancellationTokenSource monitoring = new();
+    private DeviceChoice[] devices = [];
+    private string preferredDevice = CardStore.LoadDevice();
+    private bool refreshingDevices;
+    private bool hardwareReady;
+    private IReadOnlyList<GpuReading> gpus = [];
     private CancellationTokenSource? generation;
     private byte[]? audio;
     private SoundPlayer? player;
@@ -27,8 +35,62 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) { Status.Text = "无法读取角色卡：" + ex.Message; }
         Cards.SelectedIndex = cards.Count > 0 ? 0 : -1;
+        Loaded += (_, _) => _ = MonitorHardwareAsync();
         UpdateControls();
     }
+
+    private void ToggleHardware(object sender, RoutedEventArgs e) =>
+        HardwarePanel.Visibility = HardwarePanel.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
+
+    private void DeviceChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (refreshingDevices || DevicePicker.SelectedValue is not string value) return;
+        preferredDevice = value;
+        try { CardStore.SaveDevice(value); }
+        catch (IOException ex) { Status.Text = "无法保存推理设备设置：" + ex.Message; }
+        catch (UnauthorizedAccessException ex) { Status.Text = "无法保存推理设备设置：" + ex.Message; }
+    }
+
+    private async Task MonitorHardwareAsync()
+    {
+        var token = monitoring.Token;
+        try
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+            do
+            {
+                var sample = await hardware.SampleAsync(token);
+                if (token.IsCancellationRequested) return;
+                gpus = sample.Gpus;
+                if (!hardwareReady)
+                {
+                    hardwareReady = true;
+                    UpdateControls();
+                }
+                SystemReading.Text = $"CPU  {Percent(sample.Cpu)}     内存  {Percent(sample.Ram)}";
+                GpuReading.Text = sample.Gpus.Count == 0 ? "未检测到 NVIDIA CUDA 显卡"
+                    : string.Join("\n", sample.Gpus.Select(gpu => $"{gpu.Name}   {gpu.Usage}"));
+                var choices = new List<DeviceChoice> { new("auto", "自动 · 优先显卡") };
+                if (HardwareMonitor.CudaInstalled)
+                    choices.AddRange(sample.Gpus.Select(gpu => new DeviceChoice(gpu.Id, gpu.Name)));
+                else if (sample.Gpus.Count > 0)
+                    GpuReading.Text += "\n未安装 CUDA 推理运行库";
+                if (preferredDevice.StartsWith("GPU-", StringComparison.Ordinal)
+                    && !choices.Any(choice => choice.Id == preferredDevice))
+                    choices.Add(new(preferredDevice, "上次选择的显卡不可用"));
+                choices.Add(new("cpu", "CPU"));
+                if (devices.SequenceEqual(choices)) continue;
+                refreshingDevices = true;
+                devices = choices.ToArray();
+                DevicePicker.ItemsSource = devices;
+                DevicePicker.SelectedValue = devices.Any(device => device.Id == preferredDevice) ? preferredDevice : "auto";
+                refreshingDevices = false;
+            } while (await timer.WaitForNextTickAsync(token));
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+    }
+
+    private static string Percent(int? value) => value is int number ? $"{number}%" : "—";
 
     private void AddCard(object sender, RoutedEventArgs e) => OpenCard(null);
     private void EditCard(object sender, RoutedEventArgs e) => OpenCard(Cards.SelectedItem as VoiceCard);
@@ -86,8 +148,10 @@ public partial class MainWindow : Window
         CharacterLabel.Text = card?.Name ?? "请先添加角色卡";
         TextCount.Text = $"{ScriptText.Text.Length} / 1000";
         EditButton.IsEnabled = card is { Local: false };
-        GenerateButton.IsEnabled = generation is null && card is not null && !string.IsNullOrWhiteSpace(ScriptText.Text);
+        GenerateButton.IsEnabled = generation is null && card is not null && (hardwareReady || !card.Local)
+            && !string.IsNullOrWhiteSpace(ScriptText.Text);
         CancelButton.Visibility = generation is not null ? Visibility.Visible : Visibility.Collapsed;
+        DevicePicker.IsEnabled = generation is null;
         PlayButton.IsEnabled = SaveButton.IsEnabled = StopButton.IsEnabled = audio is not null;
     }
 
@@ -98,20 +162,42 @@ public partial class MainWindow : Window
         using var request = new CancellationTokenSource();
         generation = request;
         var text = ScriptText.Text.Trim();
-        Status.Text = card.Local ? "正在本机合成，首次生成需要载入模型…" : "正在等待 GPT-SoVITS 返回音频…";
         UpdateControls();
         try
         {
-            var result = card.Local
-                ? await localEngine.SynthesizeAsync(card, text, language, request.Token)
-                : await GsvClient.SynthesizeAsync(card, text, language, request.Token);
+            byte[] result;
+            string used;
+            if (card.Local)
+            {
+                var selection = preferredDevice;
+                var gpu = HardwareMonitor.CudaInstalled ? gpus
+                    .Where(item => selection == "auto" || item.Id == selection)
+                    .OrderByDescending(item => item.TotalMiB - item.UsedMiB).FirstOrDefault() : null;
+                if (selection != "auto" && selection != "cpu" && gpu is null)
+                    throw new InvalidOperationException("之前选择的显卡不可用，请在「硬件」中重新选择。");
+                used = gpu?.Name ?? "CPU";
+                Status.Text = $"正在使用 {used} 合成，首次需要载入模型…";
+                try { result = await localEngine.SynthesizeAsync(card, text, language, gpu?.Id ?? "cpu", request.Token); }
+                catch (EngineStartupException) when (gpu is not null && selection == "auto")
+                {
+                    used = "CPU";
+                    Status.Text = "显卡初始化失败，已改用 CPU 合成…";
+                    result = await localEngine.SynthesizeAsync(card, text, language, "cpu", request.Token);
+                }
+            }
+            else
+            {
+                used = "远程服务";
+                Status.Text = "正在等待 GPT-SoVITS 返回音频…";
+                result = await GsvClient.SynthesizeAsync(card, text, language, request.Token);
+            }
             if (request.IsCancellationRequested) return;
             StopPlayback();
             audio = result;
             audioName = string.Concat(card.Name.Split(Path.GetInvalidFileNameChars())).Trim();
             if (string.IsNullOrEmpty(audioName)) audioName = "BandoriLove";
             AudioLabel.Text = $"{card.Name} · WAV";
-            Status.Text = "语音已生成，可以播放或保存。";
+            Status.Text = $"语音已生成 · {used}";
         }
         catch (OperationCanceledException)
         {
@@ -177,6 +263,8 @@ public partial class MainWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         generation?.Cancel();
+        monitoring.Cancel();
+        monitoring.Dispose();
         localEngine.Dispose();
         StopPlayback();
         base.OnClosed(e);

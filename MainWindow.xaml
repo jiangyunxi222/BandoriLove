@@ -46,10 +46,25 @@
         <RowDefinition Height="Auto"/>
         <RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
-      <StackPanel Margin="0,3,0,23">
-        <TextBlock Text="语音合成" FontSize="28" FontWeight="SemiBold"/>
-        <TextBlock x:Name="CharacterLabel" Text="请先添加角色卡" Foreground="#62626B" Margin="0,7,0,0"/>
-      </StackPanel>
+      <DockPanel Margin="0,3,0,18">
+        <Button DockPanel.Dock="Right" Content="硬件" Click="ToggleHardware" VerticalAlignment="Top"/>
+        <StackPanel>
+          <TextBlock Text="语音合成" FontSize="28" FontWeight="SemiBold"/>
+          <TextBlock x:Name="CharacterLabel" Text="请先添加角色卡" Foreground="#62626B" Margin="0,7,0,0"/>
+          <Border x:Name="HardwarePanel" Visibility="Collapsed" Background="#F7F7F8" CornerRadius="10"
+                  Margin="0,12,12,0" Padding="12">
+            <StackPanel>
+              <TextBlock x:Name="SystemReading" Text="正在检测硬件…" Foreground="#62626B"/>
+              <TextBlock x:Name="GpuReading" TextWrapping="Wrap" Foreground="#62626B" Margin="0,4,0,8"/>
+              <DockPanel>
+                <TextBlock DockPanel.Dock="Left" Text="推理设备" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <ComboBox x:Name="DevicePicker" DisplayMemberPath="Label" SelectedValuePath="Id"
+                          SelectionChanged="DeviceChanged" AutomationProperties.Name="本机推理设备"/>
+              </DockPanel>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </DockPanel>
       <DockPanel Grid.Row="1" Margin="0,0,0,9" LastChildFill="False">
         <ComboBox x:Name="InputLanguage" Width="142" SelectedValuePath="Tag" SelectedIndex="0" DockPanel.Dock="Right"
                   AutomationProperties.Name="输入语言">

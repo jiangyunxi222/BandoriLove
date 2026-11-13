@@ -15,9 +15,20 @@ def main():
     channel = os.fdopen(os.dup(sys.stdout.fileno()), "w", encoding="utf8", buffering=1)
     os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
     config = Path(sys.argv[1]).resolve()
+    device = sys.argv[2] if len(sys.argv) > 2 else "cpu"
     sys.path.insert(0, str(Path.cwd()))
     sys.argv = ["api_v2.py", "-c", str(config)]
     with contextlib.redirect_stdout(sys.stderr):
+        import torch
+        import yaml
+        if device == "cuda:0" and not torch.cuda.is_available():
+            raise RuntimeError("CUDA 不可用，请检查 NVIDIA 驱动和 CUDA 运行库。")
+        if device == "cuda:0":
+            torch.empty(1, device=device)
+        data = yaml.safe_load(config.read_text(encoding="utf8"))
+        data["custom"]["device"] = device
+        data["custom"]["is_half"] = device.startswith("cuda:")
+        config.write_text(yaml.safe_dump(data), encoding="utf8")
         try:
             import jieba_fast
         except ModuleNotFoundError:
@@ -26,8 +37,8 @@ def main():
             sys.modules["jieba_fast"] = jieba
             sys.modules["jieba_fast.posseg"] = jieba.posseg
         from tools import portable_runtime
-        portable_runtime.RUNTIME_DIR = config.parent / "runtime"
-        portable_runtime.SITE_PACKAGES = portable_runtime.RUNTIME_DIR / "Lib" / "site-packages"
+        portable_runtime.RUNTIME_DIR = Path(__file__).resolve().parent / "runtime"
+        portable_runtime.SITE_PACKAGES = Path(torch.__file__).resolve().parent.parent
         portable_runtime.FFMPEG_EXE = portable_runtime.RUNTIME_DIR / "ffmpeg.exe"
         portable_runtime.FFPROBE_EXE = portable_runtime.RUNTIME_DIR / "ffprobe.exe"
         from api_v2 import tts_pipeline

@@ -21,6 +21,7 @@ internal static class CardStore
     private static readonly string DirectoryPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BandoriLove");
     private static readonly string FilePath = Path.Combine(DirectoryPath, "characters.local.json");
+    private static readonly string DevicePath = Path.Combine(DirectoryPath, "device.txt");
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true, PropertyNameCaseInsensitive = true };
 
     internal static List<VoiceCard> Load()
@@ -34,6 +35,24 @@ internal static class CardStore
 
     internal static List<VoiceCard> Read(string path) =>
         JsonSerializer.Deserialize<List<VoiceCard>>(File.ReadAllText(path), Options) ?? [];
+
+    internal static string LoadDevice()
+    {
+        try
+        {
+            var value = File.ReadAllText(DevicePath).Trim();
+            return value == "cpu" || (value.StartsWith("GPU-", StringComparison.Ordinal) && Guid.TryParse(value[4..], out _))
+                ? value : "auto";
+        }
+        catch (IOException) { return "auto"; }
+        catch (UnauthorizedAccessException) { return "auto"; }
+    }
+
+    internal static void SaveDevice(string device)
+    {
+        Directory.CreateDirectory(DirectoryPath);
+        File.WriteAllText(DevicePath, device);
+    }
 
     internal static void Save(IEnumerable<VoiceCard> cards)
     {
