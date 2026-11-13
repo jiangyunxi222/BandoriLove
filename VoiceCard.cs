@@ -27,7 +27,7 @@ internal static class CardStore
     internal static List<VoiceCard> Load()
     {
         var saved = File.Exists(FilePath) ? Read(FilePath) : [];
-        var preset = Path.Combine(AppContext.BaseDirectory, "characters.local.json");
+        var preset = Path.Combine(EmbeddedBundle.Root, "characters.local.json");
         return File.Exists(preset)
             ? saved.Concat(Read(preset)).GroupBy(card => card.Id).Select(group => group.Last()).ToList()
             : saved;

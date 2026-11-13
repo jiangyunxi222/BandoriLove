@@ -16,7 +16,7 @@ internal sealed record HardwareReading(int? Cpu, int? Ram, IReadOnlyList<GpuRead
 internal sealed class HardwareMonitor
 {
     private (ulong Idle, ulong Total)? previous;
-    private static readonly string CudaPackage = Path.Combine(AppContext.BaseDirectory, "gsv", "cuda");
+    private static string CudaPackage => Path.Combine(EmbeddedBundle.Root, "gsv", "cuda");
     internal static bool CudaInstalled => File.Exists(Path.Combine(CudaPackage, "torch", "__init__.py"));
     internal static string CudaPath => CudaPackage;
 

@@ -17,7 +17,7 @@ internal sealed class LocalEngine : IDisposable
 
     private Process Start(string device)
     {
-        var bundle = Path.Combine(AppContext.BaseDirectory, "gsv");
+        var bundle = Path.Combine(EmbeddedBundle.Root, "gsv");
         var runtime = Path.Combine(bundle, "runtime");
         var python = Path.Combine(runtime, "python.exe");
         var engine = Path.Combine(bundle, "engine");
@@ -39,7 +39,9 @@ internal sealed class LocalEngine : IDisposable
             start.ArgumentList.Add(argument);
         start.Environment["PYTHONUTF8"] = "1";
         var sitePackages = Path.Combine(runtime, "Lib", "site-packages");
-        start.Environment["PYTHONPATH"] = device == "cpu" ? sitePackages : HardwareMonitor.CudaPath + Path.PathSeparator + sitePackages;
+        var hasCpuRuntime = File.Exists(Path.Combine(sitePackages, "torch", "__init__.py"));
+        start.Environment["PYTHONPATH"] = device == "cpu" && hasCpuRuntime
+            ? sitePackages : HardwareMonitor.CudaPath + Path.PathSeparator + sitePackages;
         start.Environment["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID";
         start.Environment["CUDA_VISIBLE_DEVICES"] = device == "cpu" ? "-1" : device;
         start.Environment["PATH"] = runtime + Path.PathSeparator + start.Environment["PATH"];
@@ -74,7 +76,7 @@ internal sealed class LocalEngine : IDisposable
     internal async Task<byte[]> SynthesizeAsync(VoiceCard card, string text, string language, string device, CancellationToken cancellation)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
-        var bundle = Path.Combine(AppContext.BaseDirectory, "gsv");
+        var bundle = Path.Combine(EmbeddedBundle.Root, "gsv");
         var reference = Path.GetFullPath(Path.Combine(bundle, card.ReferenceAudio));
         var references = Path.Combine(bundle, "references") + Path.DirectorySeparatorChar;
         if (!reference.StartsWith(references, StringComparison.OrdinalIgnoreCase) || !File.Exists(reference))

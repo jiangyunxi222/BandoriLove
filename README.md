@@ -19,6 +19,14 @@ python scripts/import-comfy-cards.py PATH/TO/jjj-gsv-v5/bandori-assets dist/char
 python -m pip install --target dist/gsv/cuda torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128
 ```
 
+发布自包含 .NET EXE 后，可把 `gsv/` 与角色卡封装到同一个程序文件。
+
+```powershell
+python scripts/package-single-exe.py dist/BandoriLove.exe dist dist/BandoriLove-Offline.exe --extractor "C:\Program Files\7-Zip\7z.exe"
+```
+
+首次运行会解包到 `%LOCALAPPDATA%\BandoriLove\packages`。单文件版复用同一套 PyTorch 库执行 CPU 和 CUDA 推理。支持 CUDA 的显卡由 Windows NVIDIA 驱动提供访问，程序包包含 CUDA 推理库和 7-Zip 解压器。7-Zip 的版权、许可证及源代码获取说明见 [7-Zip 官网](https://www.7-zip.org/)。
+
 ## 使用
 
 1. 打开 `BandoriLove.exe`，点击左栏「添加」。
