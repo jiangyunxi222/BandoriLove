@@ -1,0 +1,12 @@
+bin/
+obj/
+dist/
+.vs/
+*.user
+*.ckpt
+*.pth
+*.wav
+*.mp3
+*.flac
+*.ogg
+characters.local.json
