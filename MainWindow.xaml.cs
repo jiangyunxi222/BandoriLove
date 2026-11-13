@@ -172,7 +172,7 @@ public partial class MainWindow : Window
                 var selection = preferredDevice;
                 var gpu = HardwareMonitor.CudaInstalled ? gpus
                     .Where(item => selection == "auto" || item.Id == selection)
-                    .OrderByDescending(item => item.TotalMiB - item.UsedMiB).FirstOrDefault() : null;
+                    .OrderByDescending(item => item.TotalMiB - (item.UsedMiB ?? 0)).FirstOrDefault() : null;
                 if (selection != "auto" && selection != "cpu" && gpu is null)
                     throw new InvalidOperationException("之前选择的显卡不可用，请在「硬件」中重新选择。");
                 used = gpu?.Name ?? "CPU";

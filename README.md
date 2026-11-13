@@ -13,7 +13,7 @@ python scripts/import-comfy-cards.py PATH/TO/jjj-gsv-v5/bandori-assets dist/char
 
 将匹配的 Windows Python 3.12 和 GPT-SoVITS 依赖安装到 `dist/gsv/runtime/`。打包脚本会对照 Comfy 训练报告核验两份权重的 SHA-256，并校验角色参考音频。移动程序时应连同 `dist` 中的模型包和角色卡一起移动。
 
-「硬件」面板每 2 秒刷新 CPU、内存、NVIDIA 显卡利用率和显存。推理默认自动优先选可用显存最多的 CUDA 显卡，也可以指定一张卡或 CPU。自动模式在显卡无法初始化时改用 CPU。Windows CUDA 版需将匹配的 PyTorch 与 TorchAudio 安装到 `dist/gsv/cuda/`，CPU 运行库仍位于 `dist/gsv/runtime/`。
+「硬件」面板每 2 秒刷新 CPU、内存、NVIDIA 显卡利用率和显存。推理默认优先选择 CUDA 显卡，可读取显存使用量时优先选空闲显存最多的显卡，也可以指定一张卡或 CPU。自动模式在显卡无法初始化时改用 CPU。监测接口不可用时，仍可通过 CUDA 驱动检测和选择显卡。Windows CUDA 版需将匹配的 PyTorch 与 TorchAudio 安装到 `dist/gsv/cuda/`，CPU 运行库仍位于 `dist/gsv/runtime/`。
 
 ```powershell
 python -m pip install --target dist/gsv/cuda torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128

@@ -5,9 +5,9 @@ using System.Runtime.InteropServices;
 
 namespace BandoriLove;
 
-internal sealed record GpuReading(string Id, string Name, int UsedMiB, int TotalMiB, int? Load)
+internal sealed record GpuReading(string Id, string Name, int? UsedMiB, int TotalMiB, int? Load)
 {
-    internal string Usage => $"{(Load is int value ? $"{value}%" : "—")} · {UsedMiB / 1024.0:F1} / {TotalMiB / 1024.0:F1} GB";
+    internal string Usage => $"{(Load is int value ? $"{value}%" : "—")} · {(UsedMiB is int used ? (used / 1024.0).ToString("F1") : "—")} / {TotalMiB / 1024.0:F1} GB";
 }
 
 internal sealed record DeviceChoice(string Id, string Label);
@@ -32,7 +32,9 @@ internal sealed class HardwareMonitor
         }
         var memory = new MemoryStatus { Length = (uint)Marshal.SizeOf<MemoryStatus>() };
         int? ram = GlobalMemoryStatusEx(ref memory) ? (int)memory.Load : null;
-        return new(cpu, ram, await ReadGpusAsync(token));
+        var gpus = await ReadGpusAsync(token);
+        if (gpus.Count == 0) gpus = await Task.Run(ReadCudaDevices, token);
+        return new(cpu, ram, gpus);
     }
 
     private static async Task<IReadOnlyList<GpuReading>> ReadGpusAsync(CancellationToken cancellation)
@@ -84,6 +86,55 @@ internal sealed class HardwareMonitor
         }
         return gpus;
     }
+
+    private static List<GpuReading> ReadCudaDevices()
+    {
+        var devices = new List<GpuReading>();
+        try
+        {
+            if (cuInit(0) != 0 || cuDeviceGetCount(out var count) != 0) return devices;
+            for (var index = 0; index < count; index++)
+            {
+                var name = new byte[256];
+                var uuid = new byte[16];
+                if (cuDeviceGet(out var device, index) != 0
+                    || cuDeviceGetName(name, name.Length, device) != 0
+                    || cuDeviceGetUuid(uuid, device) != 0
+                    || cuDeviceTotalMem_v2(out var bytes, device) != 0) continue;
+                var hex = Convert.ToHexStringLower(uuid);
+                var id = $"GPU-{hex[..8]}-{hex[8..12]}-{hex[12..16]}-{hex[16..20]}-{hex[20..]}";
+                var label = System.Text.Encoding.UTF8.GetString(name).TrimEnd('\0');
+                devices.Add(new(id, label, null, (int)(bytes / 1048576), null));
+            }
+        }
+        catch (DllNotFoundException) { }
+        catch (EntryPointNotFoundException) { }
+        return devices;
+    }
+
+    [DllImport("nvcuda.dll")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static extern int cuInit(uint flags);
+
+    [DllImport("nvcuda.dll")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static extern int cuDeviceGetCount(out int count);
+
+    [DllImport("nvcuda.dll")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static extern int cuDeviceGet(out int device, int ordinal);
+
+    [DllImport("nvcuda.dll")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static extern int cuDeviceGetName([Out] byte[] name, int length, int device);
+
+    [DllImport("nvcuda.dll")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static extern int cuDeviceGetUuid([Out] byte[] uuid, int device);
+
+    [DllImport("nvcuda.dll")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static extern int cuDeviceTotalMem_v2(out nuint bytes, int device);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct FileTime
