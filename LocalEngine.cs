@@ -108,7 +108,12 @@ internal sealed class LocalEngine : IDisposable
 
     private async Task ReadResponseAsync(Process process, CancellationToken cancellation)
     {
-        var line = await process.StandardOutput.ReadLineAsync(cancellation);
+        const string prefix = "BANDORI ";
+        string? line;
+        do
+        {
+            line = await process.StandardOutput.ReadLineAsync(cancellation);
+        } while (line is not null && !line.StartsWith(prefix, StringComparison.Ordinal));
         if (line is null)
         {
             await process.WaitForExitAsync(cancellation);
@@ -116,7 +121,7 @@ internal sealed class LocalEngine : IDisposable
             lock (messages) detail = messages.LastOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? "";
             throw new IOException($"本机 GPT-SoVITS 已退出（{process.ExitCode}）。{detail}");
         }
-        using var response = JsonDocument.Parse(line);
+        using var response = JsonDocument.Parse(line.AsMemory(prefix.Length));
         if (response.RootElement.TryGetProperty("error", out var error))
             throw new InvalidOperationException(error.GetString());
     }

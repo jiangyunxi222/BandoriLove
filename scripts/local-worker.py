@@ -1,16 +1,19 @@
 """Keep one local GSV model loaded and accept synthesis requests over stdio."""
 import contextlib
 import json
+import os
 from pathlib import Path
 import sys
 import traceback
 
 
-def send(value):
-    print(json.dumps(value, ensure_ascii=False), flush=True)
+def send(channel, value):
+    print("BANDORI " + json.dumps(value, ensure_ascii=False), file=channel, flush=True)
 
 
 def main():
+    channel = os.fdopen(os.dup(sys.stdout.fileno()), "w", encoding="utf8", buffering=1)
+    os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
     config = Path(sys.argv[1]).resolve()
     sys.path.insert(0, str(Path.cwd()))
     sys.argv = ["api_v2.py", "-c", str(config)]
@@ -29,7 +32,7 @@ def main():
         portable_runtime.FFPROBE_EXE = portable_runtime.RUNTIME_DIR / "ffprobe.exe"
         from api_v2 import tts_pipeline
         import soundfile
-    send({"ready": True})
+    send(channel, {"ready": True})
     for line in sys.stdin:
         try:
             request = json.loads(line)
@@ -40,10 +43,10 @@ def main():
                 with contextlib.closing(tts_pipeline.run(request)) as audio:
                     rate, samples = next(audio)
                 soundfile.write(output, samples, rate, format="WAV", subtype="PCM_16")
-            send({"ok": True})
+            send(channel, {"ok": True})
         except Exception as error:
             traceback.print_exc(file=sys.stderr)
-            send({"error": str(error) or type(error).__name__})
+            send(channel, {"error": str(error) or type(error).__name__})
 
 
 if __name__ == "__main__":
