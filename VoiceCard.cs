@@ -13,6 +13,7 @@ public sealed record VoiceCard
     public string PromptLanguage { get; init; } = "ja";
     public string GptWeights { get; init; } = "";
     public string SovitsWeights { get; init; } = "";
+    public bool Local { get; init; }
 }
 
 internal static class CardStore
@@ -20,11 +21,19 @@ internal static class CardStore
     private static readonly string DirectoryPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BandoriLove");
     private static readonly string FilePath = Path.Combine(DirectoryPath, "characters.local.json");
-    private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions Options = new() { WriteIndented = true, PropertyNameCaseInsensitive = true };
 
-    internal static List<VoiceCard> Load() => File.Exists(FilePath)
-        ? JsonSerializer.Deserialize<List<VoiceCard>>(File.ReadAllText(FilePath), Options) ?? []
-        : [];
+    internal static List<VoiceCard> Load()
+    {
+        var saved = File.Exists(FilePath) ? Read(FilePath) : [];
+        var preset = Path.Combine(AppContext.BaseDirectory, "characters.local.json");
+        return File.Exists(preset)
+            ? saved.Concat(Read(preset)).GroupBy(card => card.Id).Select(group => group.Last()).ToList()
+            : saved;
+    }
+
+    internal static List<VoiceCard> Read(string path) =>
+        JsonSerializer.Deserialize<List<VoiceCard>>(File.ReadAllText(path), Options) ?? [];
 
     internal static void Save(IEnumerable<VoiceCard> cards)
     {

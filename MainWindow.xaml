@@ -14,7 +14,10 @@
         <StackPanel DockPanel.Dock="Top">
           <TextBlock Text="BandoriLove" FontSize="22" FontWeight="SemiBold" Margin="7,0,0,28"/>
           <DockPanel Margin="7,0,0,10">
-            <Button DockPanel.Dock="Right" Content="+ 添加" Padding="9,5" Click="AddCard"/>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+              <Button Content="导入" Padding="8,5" Click="ImportCards" Margin="0,0,4,0"/>
+              <Button Content="+ 添加" Padding="8,5" Click="AddCard"/>
+            </StackPanel>
             <TextBlock Text="角色卡" VerticalAlignment="Center" FontWeight="SemiBold"/>
           </DockPanel>
         </StackPanel>
@@ -53,18 +56,19 @@
           <ComboBoxItem Content="日语" Tag="ja"/>
           <ComboBoxItem Content="中文" Tag="zh"/>
           <ComboBoxItem Content="英语" Tag="en"/>
-          <ComboBoxItem Content="自动识别" Tag="auto"/>
+            <ComboBoxItem Content="韩语" Tag="ko"/>
+            <ComboBoxItem Content="粤语" Tag="yue"/>
         </ComboBox>
         <Label Content="朗读文本" Target="{Binding ElementName=ScriptText}" Padding="0" VerticalAlignment="Center" FontWeight="SemiBold"/>
       </DockPanel>
       <TextBox x:Name="ScriptText" Grid.Row="2" AcceptsReturn="True" TextWrapping="Wrap" FontSize="17"
-               VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto" MaxLength="3000"
+               VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto" MaxLength="1000"
                Padding="14,12" TextChanged="ScriptChanged" AutomationProperties.Name="朗读文本"/>
       <DockPanel Grid.Row="3" Margin="0,13,0,18" LastChildFill="False">
         <Button x:Name="GenerateButton" DockPanel.Dock="Right" Content="生成语音" Background="#212124" Foreground="White"
                 BorderBrush="#212124" Click="Generate" IsEnabled="False"/>
         <Button x:Name="CancelButton" DockPanel.Dock="Right" Content="取消" Click="CancelGeneration" Margin="0,0,8,0" Visibility="Collapsed"/>
-        <TextBlock x:Name="TextCount" DockPanel.Dock="Left" Text="0 / 3000" Foreground="#62626B" VerticalAlignment="Center"/>
+        <TextBlock x:Name="TextCount" DockPanel.Dock="Left" Text="0 / 1000" Foreground="#62626B" VerticalAlignment="Center"/>
       </DockPanel>
       <Border Grid.Row="4" Background="#F7F7F8" CornerRadius="11" Padding="13">
         <DockPanel LastChildFill="True">

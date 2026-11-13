@@ -10,3 +10,5 @@ dist/
 *.flac
 *.ogg
 characters.local.json
+weights/
+__pycache__/

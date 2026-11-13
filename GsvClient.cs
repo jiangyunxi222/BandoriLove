@@ -27,7 +27,7 @@ internal static class GsvClient
     {
         if (string.IsNullOrWhiteSpace(card.Name) || string.IsNullOrWhiteSpace(card.ReferenceAudio))
             throw new ArgumentException("请填写角色名称和推理端参考音频路径。");
-        _ = BaseUri(card.Endpoint);
+        if (!card.Local) _ = BaseUri(card.Endpoint);
         if (string.IsNullOrWhiteSpace(card.GptWeights) != string.IsNullOrWhiteSpace(card.SovitsWeights))
             throw new ArgumentException("需要切换模型时，请同时填写 GPT 和 SoVITS 权重路径。");
     }
@@ -36,7 +36,7 @@ internal static class GsvClient
     {
         ValidateCard(card);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
-        timeout.CancelAfter(TimeSpan.FromMinutes(5));
+        timeout.CancelAfter(TimeSpan.FromMinutes(8));
         var token = timeout.Token;
         var endpoint = BaseUri(card.Endpoint);
         if (!string.IsNullOrWhiteSpace(card.GptWeights))
@@ -55,7 +55,10 @@ internal static class GsvClient
                 prompt_text = card.PromptText,
                 prompt_lang = card.PromptLanguage,
                 media_type = "wav",
-                streaming_mode = false
+                streaming_mode = false,
+                parallel_infer = false,
+                batch_size = 1,
+                text_split_method = "cut5"
             })
         };
         using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
@@ -78,7 +81,7 @@ internal static class GsvClient
         return audio;
     }
 
-    private static bool IsPcmWave(ReadOnlySpan<byte> data)
+    internal static bool IsPcmWave(ReadOnlySpan<byte> data)
     {
         if (data.Length < 44 || !data[..4].SequenceEqual("RIFF"u8) || !data[8..12].SequenceEqual("WAVE"u8)) return false;
         var format = false;

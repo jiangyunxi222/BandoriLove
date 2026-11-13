@@ -10,6 +10,7 @@ namespace BandoriLove;
 public partial class MainWindow : Window
 {
     private readonly ObservableCollection<VoiceCard> cards = [];
+    private readonly LocalEngine localEngine = new();
     private CancellationTokenSource? generation;
     private byte[]? audio;
     private SoundPlayer? player;
@@ -31,6 +32,27 @@ public partial class MainWindow : Window
 
     private void AddCard(object sender, RoutedEventArgs e) => OpenCard(null);
     private void EditCard(object sender, RoutedEventArgs e) => OpenCard(Cards.SelectedItem as VoiceCard);
+
+    private void ImportCards(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFileDialog { Filter = "角色卡 (*.json)|*.json" };
+        if (dialog.ShowDialog(this) != true) return;
+        try
+        {
+            var imported = CardStore.Read(dialog.FileName);
+            if (imported.Count == 0) throw new InvalidDataException("文件中没有角色卡。");
+            foreach (var card in imported) GsvClient.ValidateCard(card);
+            var selected = (Cards.SelectedItem as VoiceCard)?.Id ?? imported[0].Id;
+            var merged = cards.Concat(imported).GroupBy(card => card.Id).Select(group => group.Last()).ToList();
+            CardStore.Save(merged);
+            cards.Clear();
+            foreach (var card in merged) cards.Add(card);
+            Cards.SelectedItem = cards.First(card => card.Id == selected);
+            Status.Text = $"已导入 {imported.Count} 张角色卡。";
+        }
+        catch (Exception ex) { Status.Text = "角色卡导入失败：" + ex.Message; }
+        UpdateControls();
+    }
 
     private void OpenCard(VoiceCard? existing)
     {
@@ -62,8 +84,8 @@ public partial class MainWindow : Window
         EmptyCards.Visibility = cards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         Cards.Visibility = cards.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         CharacterLabel.Text = card?.Name ?? "请先添加角色卡";
-        TextCount.Text = $"{ScriptText.Text.Length} / 3000";
-        EditButton.IsEnabled = card is not null;
+        TextCount.Text = $"{ScriptText.Text.Length} / 1000";
+        EditButton.IsEnabled = card is { Local: false };
         GenerateButton.IsEnabled = generation is null && card is not null && !string.IsNullOrWhiteSpace(ScriptText.Text);
         CancelButton.Visibility = generation is not null ? Visibility.Visible : Visibility.Collapsed;
         PlayButton.IsEnabled = SaveButton.IsEnabled = StopButton.IsEnabled = audio is not null;
@@ -76,11 +98,13 @@ public partial class MainWindow : Window
         using var request = new CancellationTokenSource();
         generation = request;
         var text = ScriptText.Text.Trim();
-        Status.Text = "正在等待 GPT-SoVITS 返回音频…";
+        Status.Text = card.Local ? "正在本机合成，首次生成需要载入模型…" : "正在等待 GPT-SoVITS 返回音频…";
         UpdateControls();
         try
         {
-            var result = await GsvClient.SynthesizeAsync(card, text, language, request.Token);
+            var result = card.Local
+                ? await localEngine.SynthesizeAsync(card, text, language, request.Token)
+                : await GsvClient.SynthesizeAsync(card, text, language, request.Token);
             if (request.IsCancellationRequested) return;
             StopPlayback();
             audio = result;
@@ -153,6 +177,7 @@ public partial class MainWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         generation?.Cancel();
+        localEngine.Dispose();
         StopPlayback();
         base.OnClosed(e);
     }
